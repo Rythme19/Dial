@@ -62,14 +62,15 @@ func usableActions(_ category: Category, for selection: [URL]) -> [Action] {
 
 /// "name.ext" → "name 2.ext" until free. Dial never overwrites anything.
 func unique(_ url: URL) -> URL {
-    let fm = FileManager.default
-    guard fm.fileExists(atPath: url.path) else { return url }
+    // attributesOfItem doesn't follow symlinks, so a dangling link counts as taken and is never written through.
+    func taken(_ u: URL) -> Bool { (try? FileManager.default.attributesOfItem(atPath: u.path)) != nil }
+    guard taken(url) else { return url }
     let dir = url.deletingLastPathComponent(), base = url.deletingPathExtension().lastPathComponent, ext = url.pathExtension
     var n = 2
     while true {
         let name = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
         let candidate = dir.appendingPathComponent(name)
-        if !fm.fileExists(atPath: candidate.path) { return candidate }
+        if !taken(candidate) { return candidate }
         n += 1
     }
 }
@@ -108,7 +109,8 @@ func sh(_ name: String, _ args: [String], cwd: URL? = nil) throws {
 }
 
 func ffmpeg(_ src: URL, _ args: [String], _ dst: URL) throws -> URL {
-    try sh("ffmpeg", ["-loglevel", "error", "-n", "-i", src.path] + args + [dst.path])
+    // Local files only: a playlist disguised as a video can't make ffmpeg reach the network.
+    try sh("ffmpeg", ["-loglevel", "error", "-nostdin", "-n", "-protocol_whitelist", "file,pipe", "-i", src.path] + args + [dst.path])
     return dst
 }
 
@@ -246,7 +248,9 @@ let catalog: [Category] = [
             try files.map { url in
                 let dst = sibling(url, "-small")
                 try sh("gs", ["-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.6", "-dPDFSETTINGS=/ebook",
-                              "-dNOPAUSE", "-dQUIET", "-dBATCH", "-sOutputFile=\(dst.path)", url.path])
+                              "-dSAFER", "-dNOPAUSE", "-dQUIET", "-dBATCH",
+                              // gs reads "%" in the output name as a page-number pattern.
+                              "-sOutputFile=" + dst.path.replacingOccurrences(of: "%", with: "%%"), url.path])
                 let size = { (u: URL) in (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
                 if size(dst) >= size(url) {
                     try? FileManager.default.removeItem(at: dst)
@@ -353,8 +357,13 @@ let catalog: [Category] = [
                 return [dst]
             }
             let dir = files[0].deletingLastPathComponent()
+            guard files.allSatisfy({ $0.deletingLastPathComponent() == dir }) else {
+                throw DialError("Zip several files from one folder at a time.")
+            }
             let dst = unique(dir.appendingPathComponent("Archive.zip"))
-            try sh("zip", ["-r", "-q", "-X", dst.path] + files.map(\.lastPathComponent), cwd: dir)
+            // "./" so a name like "-T" is a file to zip, not an option (zip drops the "./" when storing).
+            // -y stores symlinks as links, so a link inside a folder can't pull in files from elsewhere.
+            try sh("zip", ["-r", "-q", "-X", "-y", dst.path] + files.map { "./" + $0.lastPathComponent }, cwd: dir)
             return [dst]
         },
         Action(title: "Copy path", symbol: "doc.on.clipboard", detail: "Copy the full path to the clipboard") { files in

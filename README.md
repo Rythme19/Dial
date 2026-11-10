@@ -18,6 +18,8 @@ With a mixed selection (for example a PDF and an MP4), the ring only shows what 
 ## Keys
 
 - **fn + control**: tap and release to open or close the ring (Finder must be in front).
+  To use other keys, open **Settings…** from Dial's menu-bar icon and pick any two or more of
+  fn, Control, Option, Command and Shift.
 - **1–9** or click: choose an item.
 - **← →**: move. **Return**: choose.
 - **Esc**, or a click in the centre: go back or close.
@@ -63,5 +65,6 @@ state for screenshots. `design/radial-preview.html` is the HTML mock it was desi
 ```
 Sources/Actions.swift     file kinds, the action catalog, conversion engines
 Sources/RadialMenu.swift  menu model and the SwiftUI ring
-Sources/main.swift        menu-bar app, fn + control detection, Finder selection, self-test
+Sources/main.swift        menu-bar app, shortcut detection and Settings, Finder selection, self-test
+design/icon.swift         draws AppIcon.icns (swift design/icon.swift)
 ```

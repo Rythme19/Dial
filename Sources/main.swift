@@ -3,10 +3,34 @@ import SwiftUI
 import PDFKit
 import Carbon.HIToolbox
 
-/// fn + control pressed together and released with no other key in between.
+/// The modifier keys that open Dial, saved in user defaults. fn + control unless changed in Settings.
+enum Shortcut {
+    static let standard: NSEvent.ModifierFlags = [.control, .function]
+    static let keys: [(flag: NSEvent.ModifierFlags, label: String, name: String)] = [
+        (.function, "fn", "fn"), (.control, "⌃ Control", "control"), (.option, "⌥ Option", "option"),
+        (.command, "⌘ Command", "command"), (.shift, "⇧ Shift", "shift"),
+    ]
+    static var current: NSEvent.ModifierFlags {
+        valid(NSEvent.ModifierFlags(rawValue: UInt(UserDefaults.standard.integer(forKey: "shortcut"))))
+    }
+    /// Two keys at least, so a plain Shift-click or Command-click never opens the ring.
+    static func valid(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags { count(flags) >= 2 ? flags : standard }
+    static func count(_ flags: NSEvent.ModifierFlags) -> Int { keys.filter { flags.contains($0.flag) }.count }
+    static func name(_ flags: NSEvent.ModifierFlags) -> String {
+        keys.filter { flags.contains($0.flag) }.map(\.name).joined(separator: " + ")
+    }
+}
+
+/// Paths from an AppleScript list, one item each, so a file name containing a line break stays one file.
+func paths(in list: NSAppleEventDescriptor?) -> [String] {
+    guard let list, list.numberOfItems > 0 else { return [] }
+    return (1...list.numberOfItems).compactMap { list.atIndex($0)?.stringValue }.filter { $0.hasPrefix("/") }
+}
+
+/// The shortcut keys pressed together and released with no other key in between.
 /// Firing on release keeps fn + control + arrow (window tiling) and control + F-keys working as before.
 struct ChordDetector {
-    static let chord: NSEvent.ModifierFlags = [.control, .function]
+    var keys = Shortcut.standard
     private var armedAt: TimeInterval?
 
     mutating func keyDown() { armedAt = nil }
@@ -14,15 +38,58 @@ struct ChordDetector {
     /// True when the chord was just tapped.
     mutating func flagsChanged(_ raw: NSEvent.ModifierFlags, at time: TimeInterval) -> Bool {
         let flags = raw.intersection([.command, .option, .control, .shift, .function])
-        if flags == Self.chord {
+        if flags == keys {
             if armedAt == nil { armedAt = time }
         } else if flags.isEmpty, let start = armedAt {
             armedAt = nil
             return time - start < 1.0
-        } else if !flags.isSubset(of: Self.chord) {
+        } else if !flags.isSubset(of: keys) {
             armedAt = nil
         }
         return false
+    }
+}
+
+struct SettingsView: View {
+    @AppStorage("shortcut") private var raw = Int(Shortcut.standard.rawValue)
+    private var flags: NSEvent.ModifierFlags { Shortcut.valid(NSEvent.ModifierFlags(rawValue: UInt(raw))) }
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 8) {
+                    ForEach(Shortcut.keys, id: \.name) { key in
+                        let on = flags.contains(key.flag)
+                        let tap = {
+                            let next = on ? flags.subtracting(key.flag) : flags.union(key.flag)
+                            if Shortcut.count(next) >= 2 { raw = Int(next.rawValue) }
+                        }
+                        Button(action: tap) {
+                            Text(key.label)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .foregroundStyle(on ? Color.white : Color.primary)
+                                .background(on ? Color.accentColor : Color.primary.opacity(0.08), in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+            } header: {
+                Text("Open Dial with")
+            } footer: {
+                Text("Select files in Finder, then tap and release \(Shortcut.name(flags)) together. Pick at least two keys.")
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("Use fn + control") { raw = Int(Shortcut.standard.rawValue) }
+                    .disabled(flags == Shortcut.standard)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .fixedSize()
     }
 }
 
@@ -30,11 +97,14 @@ final class MenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     let model = MenuModel()
     var panel: MenuPanel!
     var status: NSStatusItem!
+    var hintItem: NSMenuItem!
     var accessItem: NSMenuItem!
+    var settings: NSWindow?
+    var busy = false
     var chord = ChordDetector()
     var monitors: [Any] = []
     var keyMonitor: Any?
@@ -44,9 +114,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         setBusy(false)
         let menu = NSMenu()
-        menu.addItem(withTitle: "Select files in Finder, then tap fn + control", action: nil, keyEquivalent: "")
+        menu.delegate = self
+        hintItem = menu.addItem(withTitle: "", action: nil, keyEquivalent: "")
         accessItem = menu.addItem(withTitle: "Allow Accessibility access…", action: #selector(openAccessibility), keyEquivalent: "")
         accessItem.target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Dial", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         status.menu = menu
@@ -90,7 +163,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func installMonitors() {
         monitors.forEach(NSEvent.removeMonitor)
         let onFlags: (NSEvent) -> Void = { [weak self] e in
-            guard let self, self.chord.flagsChanged(e.modifierFlags, at: e.timestamp) else { return }
+            guard let self else { return }
+            self.chord.keys = Shortcut.current  // picks up Settings changes right away
+            guard self.chord.flagsChanged(e.modifierFlags, at: e.timestamp) else { return }
             self.trigger()
         }
         monitors = [
@@ -104,8 +179,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        hintItem.title = "Select files in Finder, then tap \(Shortcut.name(Shortcut.current))"
+    }
+
+    @objc func openSettings() {
+        if settings == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            w.title = "Dial Settings"
+            w.styleMask = [.titled, .closable]
+            w.isReleasedWhenClosed = false
+            w.center()
+            settings = w
+        }
+        NSApp.activate()
+        settings?.makeKeyAndOrderFront(nil)
+    }
+
     func trigger() {
         if panel.isVisible { return hide() }
+        guard !busy else { return NSSound.beep() }  // one action at a time, so two runs never pick the same output name
         guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder" else { return NSSound.beep() }
         let files = finderSelection()
         guard !files.isEmpty else { return NSSound.beep() }
@@ -115,17 +208,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func finderSelection() -> [URL] {
         let source = """
         tell application "Finder"
-            set out to ""
+            set out to {}
             repeat with f in (get selection)
-                set out to out & POSIX path of (f as alias) & linefeed
+                set end of out to POSIX path of (f as alias)
             end repeat
             return out
         end tell
         """
         var error: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&error).stringValue ?? ""
+        let list = NSAppleScript(source: source)?.executeAndReturnError(&error)
         if let error { NSLog("Dial: couldn't read the Finder selection: \(error)") }
-        return result.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+        return paths(in: list).map { URL(fileURLWithPath: $0) }
     }
 
     // MARK: Panel
@@ -202,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func setBusy(_ busy: Bool) {
+        self.busy = busy
         status.button?.image = NSImage(systemSymbolName: busy ? "hourglass" : "circle.circle", accessibilityDescription: "Dial")
     }
 
@@ -287,8 +381,9 @@ func selfTest(_ samples: URL) -> Int32 {
     }
 
     // fn + control tap opens; other keys or modifiers in between cancel it.
-    func tapped(_ steps: [Any]) -> Bool {
+    func tapped(_ steps: [Any], keys: NSEvent.ModifierFlags = Shortcut.standard) -> Bool {
         var d = ChordDetector(), fired = false, t = 0.0
+        d.keys = keys
         for s in steps {
             t += 0.05
             if let f = s as? NSEvent.ModifierFlags { fired = d.flagsChanged(f, at: t) || fired } else { d.keyDown() }
@@ -301,6 +396,18 @@ func selfTest(_ samples: URL) -> Int32 {
     check(!tapped([ctrl, both, "arrow", NSEvent.ModifierFlags()]), "fn + control + arrow does not open")
     check(!tapped([ctrl, both, NSEvent.ModifierFlags([.control, .function, .shift]), NSEvent.ModifierFlags()]), "adding shift cancels")
     check(!tapped([ctrl, NSEvent.ModifierFlags()]), "control alone does not open")
+
+    // Finder selection: a line break inside a name doesn't split it into two files.
+    let sel = NSAppleScript(source: "return {\"/tmp/a\" & linefeed & \"/etc/passwd\", \"/tmp/b\"}")?.executeAndReturnError(nil)
+    check(paths(in: sel) == ["/tmp/a\n/etc/passwd", "/tmp/b"], "a line break in a file name stays one file")
+    check(paths(in: NSAppleScript(source: "return {}")?.executeAndReturnError(nil)).isEmpty, "empty selection reads as no files")
+
+    // A shortcut picked in Settings replaces fn + control.
+    let optCmd: NSEvent.ModifierFlags = [.option, .command]
+    check(tapped([NSEvent.ModifierFlags.option, optCmd, NSEvent.ModifierFlags()], keys: optCmd), "option + command opens when chosen")
+    check(!tapped([ctrl, both, NSEvent.ModifierFlags()], keys: optCmd), "fn + control no longer opens then")
+    check(Shortcut.valid(.shift) == Shortcut.standard, "a one-key shortcut falls back to fn + control")
+    check(Shortcut.name(optCmd) == "option + command", "shortcut name reads option + command")
 
     // A mixed selection only offers what can run on it.
     if let pdf = all.first(where: { kind(of: $0) == .pdf }), let mp4 = all.first(where: { kind(of: $0) == .video }),
@@ -317,7 +424,8 @@ func selfTest(_ samples: URL) -> Int32 {
             try? fm.createDirectory(at: work, withIntermediateDirectories: true)
             defer { try? fm.removeItem(at: work) }
             let copies = all.map { src -> URL in
-                let dst = work.appendingPathComponent(src.lastPathComponent)
+                // A leading "-" proves no tool reads a file name as an option.
+                let dst = work.appendingPathComponent("-" + src.lastPathComponent)
                 try? fm.copyItem(at: src, to: dst)
                 return dst
             }

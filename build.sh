@@ -11,7 +11,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -swift-version 5 -target arm64-apple-macos26.0 Sources/*.swift -o "$APP/Contents/MacOS/Dial"
 cp Info.plist "$APP/Contents/"
 cp AppIcon.icns "$APP/Contents/Resources/"   # regenerate with: swift design/icon.swift
-codesign --force --sign - "$APP"
+# Hardened runtime: other processes can't inject code into Dial and borrow its Accessibility access.
+codesign --force --options runtime --entitlements Dial.entitlements --sign - "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "install" ]]; then
