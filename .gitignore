@@ -1,0 +1,4 @@
+build/
+.DS_Store
+# Apple wallpapers used only by the design preview; not ours to redistribute.
+design/assets/
