@@ -5,6 +5,10 @@ Liquid Glass ring opens under the pointer. Pick a type, then an action. The resu
 next to the original, and Dial never overwrites anything (it adds " 2" instead).
 Everything runs locally.
 
+<p align="center">
+  <img src="docs/demo.gif" width="720" alt="Two PDFs selected in Finder, Option and Command tapped, the ring opens, Merge makes contract-merged.pdf">
+</p>
+
 | Type | Actions |
 |---|---|
 | PDF | Merge (PDFs and images), Split, Compress, Rotate, To JPG, To PNG, Text |
@@ -14,6 +18,15 @@ Everything runs locally.
 | General | Zip, Copy path, New folder, Add date |
 
 With a mixed selection (for example a PDF and an MP4), the ring only shows what works.
+
+<p align="center">
+  <img src="docs/actions.gif" width="720" alt="A video becomes a GIF, a photo has its info stripped, two items become a zip">
+</p>
+
+<p align="center">
+  <img src="docs/ring-light.png" width="360" alt="The PDF ring in light mode, with Merge highlighted and its hint below">
+  <img src="docs/ring-dark.png" width="360" alt="The same ring in dark mode">
+</p>
 
 ## Keys
 
