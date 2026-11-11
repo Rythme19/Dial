@@ -90,3 +90,7 @@ Sources/RadialMenu.swift  menu model and the SwiftUI ring
 Sources/main.swift        menu-bar app, shortcut detection and Settings, Finder selection, self-test
 design/icon.swift         draws AppIcon.icns (swift design/icon.swift)
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
