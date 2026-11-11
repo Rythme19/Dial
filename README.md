@@ -1,6 +1,33 @@
-# Dial
+<p align="center">
+  <img src="docs/logo.png" width="128" alt="Dial app icon">
+</p>
 
-Quick file actions for macOS. Select files in Finder, tap **⌥ Option + ⌘ Command**, and a small
+<h1 align="center">Dial</h1>
+
+<p align="center">
+  <b>Quick file actions for macOS Finder.</b><br>
+  Tap ⌥ ⌘ to convert, merge and compress files without opening an app.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Rythme19/Dial/releases/latest"><img src="https://img.shields.io/github/v/release/Rythme19/Dial?label=release&color=0a7cff" alt="Latest release"></a>
+  <a href="https://github.com/Rythme19/Dial/releases"><img src="https://img.shields.io/github/downloads/Rythme19/Dial/total?color=0a7cff" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white" alt="macOS 26 or later">
+  <img src="https://img.shields.io/badge/Apple%20silicon-arm64-000000" alt="Apple silicon">
+  <img src="https://img.shields.io/badge/Swift-SwiftUI-F05138?logo=swift&logoColor=white" alt="Swift and SwiftUI">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Rythme19/Dial?color=lightgrey" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#keys">Keys</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="https://github.com/Rythme19/Dial/releases/latest">Download</a>
+</p>
+
+<br>
+
+Select files in Finder, tap **⌥ Option + ⌘ Command**, and a small
 Liquid Glass ring opens under the pointer. Pick a type, then an action. The result lands
 next to the original, and Dial never overwrites anything (it adds " 2" instead).
 Everything runs locally.
@@ -102,6 +129,7 @@ Sources/Actions.swift     file kinds, the action catalog, conversion engines
 Sources/RadialMenu.swift  menu model and the SwiftUI ring
 Sources/main.swift        menu-bar app, shortcut detection and Settings, Finder selection, self-test
 design/icon.swift         draws AppIcon.icns (swift design/icon.swift)
+design/social.swift       draws docs/logo.png and docs/social-preview.png from it
 ```
 
 ## License
