@@ -32,7 +32,8 @@ Paste this into Terminal (Applications → Utilities → Terminal) and press Ret
 curl -fsSL https://raw.githubusercontent.com/Rythme19/Dial/main/install.sh | bash
 ```
 
-It puts Dial in your Applications folder and starts it. Run the same line again to update.
+It puts Dial in the Applications folder inside your home folder (or updates the copy in
+/Applications, if you put one there) and starts it. Run the same line again to update.
 It needs macOS 26 on a Mac with Apple silicon.
 
 Then allow two things, once:

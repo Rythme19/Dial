@@ -5,8 +5,10 @@
 set -euo pipefail
 URL="${DIAL_URL:-https://github.com/Rythme19/Dial/releases/latest/download/Dial.zip}"
 APP="$HOME/Applications/Dial.app"
+[[ -d /Applications/Dial.app ]] && APP=/Applications/Dial.app   # update a copy moved there by hand
 
-[[ "$(uname -m)" == arm64 ]] || { echo "Dial needs a Mac with Apple silicon."; exit 1; }
+[[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] ||   # true under Rosetta too
+    { echo "Dial needs a Mac with Apple silicon."; exit 1; }
 (( $(sw_vers -productVersion | cut -d. -f1) >= 26 )) || { echo "Dial needs macOS 26 or later."; exit 1; }
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -21,7 +23,7 @@ if [[ -d "$APP" ]]; then
     pkill -x Dial 2>/dev/null || true
     rm -rf "$APP"
 fi
-mkdir -p "$HOME/Applications"
+mkdir -p "$(dirname "$APP")"
 mv "$tmp/Dial.app" "$APP"
 echo "Installed $APP"
 
@@ -35,7 +37,7 @@ if (( ${#missing[@]} )); then
     if [[ -x "$brew" ]]; then
         answer=n
         { read -r -p "Install ${missing[*]} with Homebrew for the PDF, image and video actions? [Y/n] " answer </dev/tty; } 2>/dev/null || true
-        if [[ "$answer" =~ ^[Nn] ]]; then echo "Skipped. Later, run: brew install ${missing[*]}"; else "$brew" install "${missing[@]}"; fi
+        if [[ "$answer" =~ ^[Nn] ]]; then echo "Skipped. Later, run: brew install ${missing[*]}"; else "$brew" install "${missing[@]}" || echo "Homebrew couldn't install them. Later, run: brew install ${missing[*]}"; fi
     else
         echo "Some actions need ${missing[*]}. Install Homebrew (https://brew.sh), then run: brew install ${missing[*]}"
     fi
