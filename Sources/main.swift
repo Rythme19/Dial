@@ -3,9 +3,9 @@ import SwiftUI
 import PDFKit
 import Carbon.HIToolbox
 
-/// The modifier keys that open Dial, saved in user defaults. fn + control unless changed in Settings.
+/// The modifier keys that open Dial, saved in user defaults. option + command unless changed in Settings.
 enum Shortcut {
-    static let standard: NSEvent.ModifierFlags = [.control, .function]
+    static let standard: NSEvent.ModifierFlags = [.option, .command]
     static let keys: [(flag: NSEvent.ModifierFlags, label: String, name: String)] = [
         (.function, "fn", "fn"), (.control, "⌃ Control", "control"), (.option, "⌥ Option", "option"),
         (.command, "⌘ Command", "command"), (.shift, "⇧ Shift", "shift"),
@@ -27,12 +27,13 @@ func paths(in list: NSAppleEventDescriptor?) -> [String] {
     return (1...list.numberOfItems).compactMap { list.atIndex($0)?.stringValue }.filter { $0.hasPrefix("/") }
 }
 
-/// The shortcut keys pressed together and released with no other key in between.
-/// Firing on release keeps fn + control + arrow (window tiling) and control + F-keys working as before.
+/// The shortcut keys pressed together and released with no other key or click in between.
+/// Firing on release keeps option + command + a key (⌥⌘D, ⌥⌘Esc) and ⌥⌘-drag in Finder working as before.
 struct ChordDetector {
     var keys = Shortcut.standard
     private var armedAt: TimeInterval?
 
+    /// A key or mouse click while the keys are held: it was another shortcut, not Dial.
     mutating func keyDown() { armedAt = nil }
 
     /// True when the chord was just tapped.
@@ -83,7 +84,7 @@ struct SettingsView: View {
             }
             HStack {
                 Spacer()
-                Button("Use fn + control") { raw = Int(Shortcut.standard.rawValue) }
+                Button("Use option + command") { raw = Int(Shortcut.standard.rawValue) }
                     .disabled(flags == Shortcut.standard)
             }
         }
@@ -170,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         monitors = [
             NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: onFlags),
-            NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in self?.chord.keyDown() },
+            NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in self?.chord.keyDown() },
             NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { e in onFlags(e); return e },
         ].compactMap { $0 }
     }
@@ -301,8 +302,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: Demo
 
-    /// Dial --demo [--dark] [--backdrop img] [--level PDF] [--hot N] [--press N] file…
+    /// Dial --demo [--dark] [--plain] [--backdrop img] [--level PDF] [--hot N] [--press N] file…
     /// Opens the menu in a fixed state over a known backdrop, and prints the area to capture.
+    /// --plain drops the test paragraph behind the ring, for clean screenshots.
     func demo() {
         var args = Array(CommandLine.arguments.drop { $0 != "--demo" }.dropFirst())
         func take(_ flag: String) -> String? {
@@ -311,6 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return args[i + 1]
         }
         let dark = args.firstIndex(of: "--dark").map { args.remove(at: $0) } != nil
+        let plain = args.firstIndex(of: "--plain").map { args.remove(at: $0) } != nil
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let image = take("--backdrop"), level = take("--level")
         let hot = take("--hot").flatMap(Int.init), press = take("--press").flatMap(Int.init)
@@ -319,7 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let frame = NSRect(x: screen.midX - 260, y: screen.midY - 240, width: 520, height: 480)
         let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.level = .floating
-        window.contentView = NSHostingView(rootView: DemoBackdrop(image: image))
+        window.contentView = NSHostingView(rootView: DemoBackdrop(image: image, text: !plain))
         window.orderFrontRegardless()
         backdrop = window
 
@@ -336,6 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 /// Busy content behind the menu: a photo plus dense text, the worst case for glass legibility.
 struct DemoBackdrop: View {
     let image: String?
+    var text = true
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let image, let ns = NSImage(contentsOfFile: image) {
@@ -343,11 +347,13 @@ struct DemoBackdrop: View {
             } else {
                 Color(nsColor: .windowBackgroundColor)
             }
-            Text(String(repeating: "Quarterly report draft — revenue grew in every region, with the strongest gains in services. ", count: 14))
-                .font(.system(size: 15))
-                .foregroundStyle(.primary)
-                .padding(24)
-                .frame(width: 520, alignment: .leading)
+            if text {
+                Text(String(repeating: "Quarterly report draft — revenue grew in every region, with the strongest gains in services. ", count: 14))
+                    .font(.system(size: 15))
+                    .foregroundStyle(.primary)
+                    .padding(24)
+                    .frame(width: 520, alignment: .leading)
+            }
         }
         .frame(width: 520, height: 480)
         .clipped()
@@ -380,7 +386,7 @@ func selfTest(_ samples: URL) -> Int32 {
         if !ok { failed += 1 }
     }
 
-    // fn + control tap opens; other keys or modifiers in between cancel it.
+    // option + command tap opens; other keys, clicks or modifiers in between cancel it.
     func tapped(_ steps: [Any], keys: NSEvent.ModifierFlags = Shortcut.standard) -> Bool {
         var d = ChordDetector(), fired = false, t = 0.0
         d.keys = keys
@@ -390,24 +396,24 @@ func selfTest(_ samples: URL) -> Int32 {
         }
         return fired
     }
-    let ctrl: NSEvent.ModifierFlags = .control, fn: NSEvent.ModifierFlags = .function, both: NSEvent.ModifierFlags = [.control, .function]
-    check(tapped([ctrl, both, ctrl, NSEvent.ModifierFlags()]), "fn + control tap opens")
-    check(tapped([fn, both, fn, NSEvent.ModifierFlags()]), "control + fn tap (other order) opens")
-    check(!tapped([ctrl, both, "arrow", NSEvent.ModifierFlags()]), "fn + control + arrow does not open")
-    check(!tapped([ctrl, both, NSEvent.ModifierFlags([.control, .function, .shift]), NSEvent.ModifierFlags()]), "adding shift cancels")
-    check(!tapped([ctrl, NSEvent.ModifierFlags()]), "control alone does not open")
+    let opt: NSEvent.ModifierFlags = .option, cmd: NSEvent.ModifierFlags = .command, both: NSEvent.ModifierFlags = [.option, .command]
+    check(tapped([opt, both, opt, NSEvent.ModifierFlags()]), "option + command tap opens")
+    check(tapped([cmd, both, cmd, NSEvent.ModifierFlags()]), "command + option tap (other order) opens")
+    check(!tapped([opt, both, "key", NSEvent.ModifierFlags()]), "option + command + a key (or click) does not open")
+    check(!tapped([opt, both, NSEvent.ModifierFlags([.option, .command, .shift]), NSEvent.ModifierFlags()]), "adding shift cancels")
+    check(!tapped([opt, NSEvent.ModifierFlags()]), "option alone does not open")
 
     // Finder selection: a line break inside a name doesn't split it into two files.
     let sel = NSAppleScript(source: "return {\"/tmp/a\" & linefeed & \"/etc/passwd\", \"/tmp/b\"}")?.executeAndReturnError(nil)
     check(paths(in: sel) == ["/tmp/a\n/etc/passwd", "/tmp/b"], "a line break in a file name stays one file")
     check(paths(in: NSAppleScript(source: "return {}")?.executeAndReturnError(nil)).isEmpty, "empty selection reads as no files")
 
-    // A shortcut picked in Settings replaces fn + control.
-    let optCmd: NSEvent.ModifierFlags = [.option, .command]
-    check(tapped([NSEvent.ModifierFlags.option, optCmd, NSEvent.ModifierFlags()], keys: optCmd), "option + command opens when chosen")
-    check(!tapped([ctrl, both, NSEvent.ModifierFlags()], keys: optCmd), "fn + control no longer opens then")
-    check(Shortcut.valid(.shift) == Shortcut.standard, "a one-key shortcut falls back to fn + control")
-    check(Shortcut.name(optCmd) == "option + command", "shortcut name reads option + command")
+    // A shortcut picked in Settings replaces option + command.
+    let fnCtrl: NSEvent.ModifierFlags = [.function, .control]
+    check(tapped([NSEvent.ModifierFlags.control, fnCtrl, NSEvent.ModifierFlags()], keys: fnCtrl), "fn + control opens when chosen")
+    check(!tapped([opt, both, NSEvent.ModifierFlags()], keys: fnCtrl), "option + command no longer opens then")
+    check(Shortcut.valid(.shift) == Shortcut.standard, "a one-key shortcut falls back to option + command")
+    check(Shortcut.name(both) == "option + command", "shortcut name reads option + command")
 
     // A mixed selection only offers what can run on it.
     if let pdf = all.first(where: { kind(of: $0) == .pdf }), let mp4 = all.first(where: { kind(of: $0) == .video }),

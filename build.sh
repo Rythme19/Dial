@@ -2,6 +2,7 @@
 # Builds Dial.app with the Command Line Tools (no Xcode needed).
 #   ./build.sh           → build/Dial.app
 #   ./build.sh install   → also copies it to ~/Applications
+#   ./build.sh release   → also zips it to build/Dial.zip, the file install.sh downloads
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -23,4 +24,10 @@ if [[ "${1:-}" == "install" ]]; then
     touch ~/Applications/Dial.app   # so Finder picks up the new icon
     open ~/Applications/Dial.app
     echo "Installed and started ~/Applications/Dial.app"
+fi
+
+if [[ "${1:-}" == "release" ]]; then
+    rm -f build/Dial.zip
+    ditto -c -k --keepParent "$APP" build/Dial.zip   # ditto keeps the signature intact
+    echo "Zipped build/Dial.zip: attach it to a GitHub release"
 fi
